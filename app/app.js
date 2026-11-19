@@ -53,12 +53,42 @@ function setAckState(li, state, ackedAt) {
   }
 }
 
-// R2: one listener on the list; the clicked button's row names the incident.
-list.addEventListener('click', async (e) => {
-  const btn = e.target.closest('[data-testid="ack"]');
-  if (!btn) return;
-  const li = btn.closest('[data-testid="incident-row"]');
+// R2b (product, after the 00:13 misclick): Ack asks to confirm, and the confirm names the incident id.
+// The id is taken when Ack is clicked, so a row moving afterwards cannot change what gets acked.
+const confirmBox = document.querySelector('[data-testid="confirm"]');
+const confirmText = confirmBox.querySelector('.confirm-text');
+const confirmAck = confirmBox.querySelector('[data-testid="confirm-ack"]');
+const confirmCancel = confirmBox.querySelector('[data-testid="confirm-cancel"]');
+let pending = null; // { li, id, summary }
+
+function openConfirm(li) {
   const id = li.dataset.id;
+  const summary = li.querySelector('.what')?.textContent ?? '';
+  pending = { li, id };
+  confirmText.innerHTML = `Ack <strong>${esc(id)}</strong>?<br><span class="confirm-what">${esc(summary)}</span>`;
+  confirmBox.hidden = false;
+  confirmCancel.focus();
+}
+function closeConfirm() {
+  pending = null;
+  confirmBox.hidden = true;
+}
+confirmCancel.addEventListener('click', closeConfirm);
+confirmBox.addEventListener('click', (e) => e.target === confirmBox && closeConfirm());
+document.addEventListener('keydown', (e) => e.key === 'Escape' && pending && closeConfirm());
+confirmAck.addEventListener('click', () => {
+  const { li, id } = pending;
+  closeConfirm();
+  sendAck(li, id);
+});
+
+list.addEventListener('click', (e) => {
+  const btn = e.target.closest('[data-testid="ack"]');
+  if (!btn || btn.disabled) return;
+  openConfirm(btn.closest('[data-testid="incident-row"]'));
+});
+
+async function sendAck(li, id) {
   setAckState(li, 'busy');
   try {
     const reply = await ack(id);
@@ -68,7 +98,7 @@ list.addEventListener('click', async (e) => {
     console.error(err);
     setAckState(li, 'open');
   }
-});
+}
 
 // R1: keep existing rows (and their ack state); put new ones on top, newest first.
 function render(incidents) {
